@@ -1,2 +1,8 @@
 # Proyecto-Final-ELDI-2026-2
-Entregable final con instrucciones de como reproducir el juego.
+Instrucciones para ejecutar el código y probar el proyecto.
+1) Inicialmente se copiaran los codigos que se encuentran en este repositorio y se copiaran en un archivo nuevo de Vivado, donde se generara y se correra la implementacion asegurandose de que el codigo no presente fallas de sintaxis o se haya escogido el modelo de FPGA incorrecto. El proyecto se trabajo en una Nexys A7, por lo que es importante que se utilice esta misma o modificar el archivo de constraints en caso de ser necesario.
+2) Se utilizara el puerto VGA que tiene la FPGA para poder visualizar el juego. Si no se tiene un display VGA a la mano, se puede utilizar un conversor de VGA a HDMI para poder visualizarlo en un monitor sin necesidad del display VGA. Realizar la conexion entre la FPGA y el monitor.
+3) Correr la implementación ya copiada en Vivado y programar la FPGA. Conectar el Teclado PS2.
+4) Al momento de que se cargue el código, en la pantalla que se este utilizando se empezara a mover la serpiente. Con el teclado se empezara a direccionar a la serpiente con el objetivo de que llegue a la comida (Bloques verdes), y evitando asimismo los bloques amarillos (Veneno). Es importante recalcar que a medida que la serpiente se alimente con mas bloques se moverá mas rápido, y si llega a chocar con un borde o a moverse en una dirección no permitida el juego se acabara y quedara en la pantalla de Game Over. Para volver a jugar se debe darle al botón de RESET, con el cual se volverá a jugar desde una nueva partida.
+
+NOTA IMPORTANTE: Las direcciones no permitidas son aquellas que involucran un movimiento que la serpiente no puede efectuar, es decir, no podrá moverse de izquierda estando hacia la derecha, y pasa el mismo caso si es de forma vertical. Si llega a ocurrir esto, se dará el juego por terminado.
