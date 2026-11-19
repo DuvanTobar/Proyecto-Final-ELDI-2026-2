@@ -1,0 +1,244 @@
+`timescale 1ns / 1ps
+`default_nettype none
+ 
+module vga_test_nexys (
+    input  wire       clk_100mhz,
+    input  wire       rst_n,      
+    input  wire       btn_up,
+    input  wire       btn_down,
+    input  wire       btn_left,
+    input  wire       btn_right,
+    output reg  [3:0] VGA_R,      
+    output reg  [3:0] VGA_G,      
+    output reg  [3:0] VGA_B,      
+    output reg        VGA_HS,     
+    output reg        VGA_VS      
+);
+ 
+    reg [1:0] clk_div = 0;
+    always @(posedge clk_100mhz or negedge rst_n) begin
+        if (!rst_n) clk_div <= 2'b0;
+        else clk_div <= clk_div + 1'b1;
+    end
+    wire clk_25mhz = clk_div[1]; 
+ 
+    reg [9:0] hpos = 0;
+    reg [9:0] vpos = 0;
+ 
+    always @(posedge clk_25mhz or negedge rst_n) begin
+        if (!rst_n) begin
+            hpos <= 10'd0;
+            vpos <= 10'd0;
+        end else begin
+            if (hpos == 10'd799) begin
+                hpos <= 10'd0;
+                if (vpos == 10'd524) vpos <= 10'd0;
+                else vpos <= vpos + 1'b1;
+            end else begin
+                hpos <= hpos + 1'b1;
+            end
+        end
+    end
+ 
+    always @(posedge clk_25mhz) begin
+        VGA_HS <= ~((hpos >= 10'd656) && (hpos < 10'd752));
+        VGA_VS <= ~((vpos >= 10'd490) && (vpos < 10'd492));
+    end
+ 
+    wire video_on = (hpos < 10'd640) && (vpos < 10'd480);
+ 
+    wire [4:0] cell_x = hpos[9:5];
+    wire [3:0] cell_y = vpos[8:5];
+    
+    wire [8:0] current_vga_addr = {cell_y, cell_x};
+    wire [1:0] square_state;
+
+    wire fsm_we;
+    wire [8:0] fsm_address;
+    wire [1:0] fsm_data;
+
+    tile_map_memory grid_ram (
+        .clk(clk_100mhz),
+        .we(fsm_we), 
+        .fsm_addr(fsm_address), 
+        .fsm_data_in(fsm_data), 
+        .vga_addr(current_vga_addr),
+        .vga_data_out(square_state)
+    );
+
+    snake_logic_fsm game_fsm (
+        .clk_100mhz(clk_100mhz),
+        .rst_n(rst_n),
+        .btn_up(btn_up),       
+        .btn_down(btn_down),
+        .btn_left(btn_left),
+        .btn_right(btn_right),
+        .we(fsm_we),
+        .fsm_addr(fsm_address),
+        .fsm_data_in(fsm_data)
+    );
+ 
+    always @(*) begin
+        if (!video_on) begin
+            VGA_R = 4'b0000; VGA_G = 4'b0000; VGA_B = 4'b0000;
+        end else if (hpos < 10'd10 || hpos >= 10'd630 || vpos < 10'd10 || vpos >= 10'd470) begin
+            VGA_R = 4'b0000; VGA_G = 4'b0000; VGA_B = 4'b1111;
+        end else begin
+            case (square_state)
+                2'b00: begin
+                    VGA_R = 4'b0000; VGA_G = 4'b0000; VGA_B = 4'b0000;
+                end
+                2'b01: begin
+                    VGA_R = 4'b0000; VGA_G = 4'b1111; VGA_B = 4'b0000;
+                end
+                2'b10: begin
+                    VGA_R = 4'b1111; VGA_G = 4'b1111; VGA_B = 4'b0000;
+                end
+                default: begin
+                    VGA_R = 4'b0000; VGA_G = 4'b0000; VGA_B = 4'b0000;
+                end
+            endcase
+        end
+    end
+endmodule
+
+module snake_logic_fsm (
+    input wire clk_100mhz,
+    input wire rst_n,
+    input wire btn_up,
+    input wire btn_down,
+    input wire btn_left,
+    input wire btn_right,
+    output reg we,
+    output reg [8:0] fsm_addr,
+    output reg [1:0] fsm_data_in
+);
+
+    reg [24:0] tick_counter = 0;
+    wire game_tick = (tick_counter == 25'd25_000_000); 
+
+    always @(posedge clk_100mhz) begin
+        if (!rst_n) tick_counter <= 0;
+        else if (game_tick) tick_counter <= 0;
+        else tick_counter <= tick_counter + 1;
+    end
+
+    reg [4:0] head_x; 
+    reg [3:0] head_y;
+    reg [1:0] direction, next_direction;
+    
+    localparam DIR_UP = 2'b00, DIR_DOWN = 2'b01, DIR_LEFT = 2'b10, DIR_RIGHT = 2'b11;
+
+    always @(posedge clk_100mhz) begin
+        if (!rst_n) next_direction <= DIR_RIGHT;
+        else begin
+            if (btn_up)    next_direction <= DIR_UP;
+            if (btn_down)  next_direction <= DIR_DOWN;
+            if (btn_left)  next_direction <= DIR_LEFT;
+            if (btn_right) next_direction <= DIR_RIGHT;
+        end
+    end
+       
+    localparam INIT = 0, WAIT_TICK = 1, ERASE_OLD = 2, UPDATE_POS = 3, DRAW_NEW = 4, GAME_OVER = 5;
+    reg [2:0] state = INIT;
+
+    always @(posedge clk_100mhz or negedge rst_n) begin
+        if (!rst_n) begin
+            state <= INIT;
+            we <= 1'b0;
+        end else begin
+            case (state)
+                INIT: begin
+                    head_x <= 5'd10; 
+                    head_y <= 4'd7;
+                    direction <= DIR_RIGHT;
+                    state <= DRAW_NEW;
+                end
+                
+                WAIT_TICK: begin
+                    we <= 1'b0; 
+                    if (game_tick) begin
+                        if (direction[1] == next_direction[1] && direction != next_direction) begin
+                            state <= GAME_OVER;
+                        end else begin
+                            direction <= next_direction;
+                            state <= ERASE_OLD;
+                        end
+                    end
+                end
+                
+                ERASE_OLD: begin
+                    fsm_addr <= {head_y, head_x};
+                    fsm_data_in <= 2'b00;
+                    we <= 1'b1;
+                    state <= UPDATE_POS;
+                end
+                
+                UPDATE_POS: begin
+                    we <= 1'b0;
+                    case (direction)
+                        DIR_UP: begin
+                            if (head_y > 0) begin
+                                head_y <= head_y - 1;
+                                state <= DRAW_NEW;
+                            end else state <= GAME_OVER;
+                        end
+                        DIR_DOWN: begin
+                            if (head_y < 14) begin
+                                head_y <= head_y + 1;
+                                state <= DRAW_NEW;
+                            end else state <= GAME_OVER;
+                        end
+                        DIR_LEFT: begin
+                            if (head_x > 0) begin
+                                head_x <= head_x - 1;
+                                state <= DRAW_NEW;
+                            end else state <= GAME_OVER;
+                        end
+                        DIR_RIGHT: begin
+                            if (head_x < 19) begin
+                                head_x <= head_x + 1;
+                                state <= DRAW_NEW;
+                            end else state <= GAME_OVER;
+                        end
+                    endcase
+                end
+                
+                DRAW_NEW: begin
+                    fsm_addr <= {head_y, head_x}; 
+                    fsm_data_in <= 2'b01;
+                    we <= 1'b1;
+                    state <= WAIT_TICK;
+                end
+                
+                GAME_OVER: begin
+                    we <= 1'b0;
+                    state <= GAME_OVER;
+                end
+                
+                default: state <= INIT;
+            endcase
+        end
+    end
+endmodule
+
+module tile_map_memory (
+    input wire clk,
+    input wire we,
+    input wire [8:0] fsm_addr,
+    input wire [1:0] fsm_data_in,
+    input wire [8:0] vga_addr,
+    output wire [1:0] vga_data_out
+);
+
+    reg [1:0] memory_array [511:0];
+
+    always @(posedge clk) begin
+        if (we) begin
+            memory_array[fsm_addr] <= fsm_data_in;
+        end
+    end
+
+    assign vga_data_out = memory_array[vga_addr];
+
+endmodule
