@@ -1,6 +1,6 @@
 `timescale 1ns / 1ps
 `default_nettype none
- 
+
 module vga_test_nexys (
     input  wire       clk_100mhz,
     input  wire       rst_n,      
@@ -8,13 +8,14 @@ module vga_test_nexys (
     input  wire       btn_down,
     input  wire       btn_left,
     input  wire       btn_right,
+    input  wire       btn_start,
     output reg  [3:0] VGA_R,      
     output reg  [3:0] VGA_G,      
     output reg  [3:0] VGA_B,      
     output reg        VGA_HS,     
     output reg        VGA_VS      
 );
- 
+
     reg [1:0] clk_div = 0;
     always @(posedge clk_100mhz or negedge rst_n) begin
         if (!rst_n) clk_div <= 2'b0;
@@ -46,22 +47,32 @@ module vga_test_nexys (
     end
  
     wire video_on = (hpos < 10'd640) && (vpos < 10'd480);
- 
+
+    reg [5:0] frame_cnt = 0;
+    always @(negedge VGA_VS or negedge rst_n) begin
+        if (!rst_n) frame_cnt <= 6'd0;
+        else frame_cnt <= frame_cnt + 1'b1;
+    end
+    wire blink_on = frame_cnt[4];
+    wire [11:0] btn_txt_col = blink_on ? 12'hFFF : 12'hFC0;
+
     wire [4:0] cell_x = hpos[9:5];
     wire [3:0] cell_y = vpos[8:5];
-    
     wire [8:0] current_vga_addr = {cell_y, cell_x};
     wire [1:0] square_state;
 
     wire fsm_we;
     wire [8:0] fsm_address;
-    wire [1:0] fsm_data;
+    wire [1:0] fsm_data_in_wire;
+    wire [1:0] fsm_data_out_wire;
+    wire [1:0] global_game_state;
 
     tile_map_memory grid_ram (
         .clk(clk_100mhz),
         .we(fsm_we), 
         .fsm_addr(fsm_address), 
-        .fsm_data_in(fsm_data), 
+        .fsm_data_in(fsm_data_in_wire), 
+        .fsm_data_out(fsm_data_out_wire),
         .vga_addr(current_vga_addr),
         .vga_data_out(square_state)
     );
@@ -73,164 +84,477 @@ module vga_test_nexys (
         .btn_down(btn_down),
         .btn_left(btn_left),
         .btn_right(btn_right),
+        .btn_start(btn_start),
         .we(fsm_we),
         .fsm_addr(fsm_address),
-        .fsm_data_in(fsm_data)
+        .fsm_data_in(fsm_data_in_wire),
+        .fsm_data_out(fsm_data_out_wire),
+        .global_state(global_game_state)
     );
- 
+
+    wire [6:0] ui_x = hpos[9:3];
+    wire [5:0] ui_y = vpos[8:3];
+
+    reg [11:0] intro_rgb;
+    reg [11:0] game_rgb;
+    reg [11:0] gameover_rgb;
+
     always @(*) begin
-        if (!video_on) begin
-            VGA_R = 4'b0000; VGA_G = 4'b0000; VGA_B = 4'b0000;
-        end else if (hpos < 10'd10 || hpos >= 10'd630 || vpos < 10'd10 || vpos >= 10'd470) begin
-            VGA_R = 4'b0000; VGA_G = 4'b0000; VGA_B = 4'b1111;
+        intro_rgb = ((ui_x[0] ^ ui_y[0]) == 1'b1) ? 12'h013 : 12'h002;
+
+        if ((ui_x >= 7'd1 && ui_x <= 7'd78) && (ui_y >= 6'd1 && ui_y <= 6'd58)) begin
+            if (ui_x == 7'd1 || ui_x == 7'd78 || ui_y == 6'd1 || ui_y == 6'd58)
+                intro_rgb = 12'h0F6;
+        end
+        if ((ui_x >= 7'd3 && ui_x <= 7'd76) && (ui_y >= 6'd3 && ui_y <= 6'd56)) begin
+            if (ui_x == 7'd3 || ui_x == 7'd76 || ui_y == 6'd3 || ui_y == 6'd56)
+                intro_rgb = 12'h084;
+        end
+
+        if (ui_y == 6'd8 && ui_x >= 7'd20 && ui_x <= 7'd48)
+            intro_rgb = (ui_x == 7'd48) ? 12'h8F0 : 12'h0D3;
+        if (ui_y == 6'd8 && ui_x == 7'd55)
+            intro_rgb = 12'hF22;
+
+        if (ui_y >= 6'd15 && ui_y <= 6'd23) begin
+            if ((ui_y == 6'd15 || ui_y == 6'd19 || ui_y == 6'd23) && (ui_x >= 7'd22 && ui_x <= 7'd26)) intro_rgb = 12'h0F5;
+            if ((ui_x == 7'd22 && ui_y <= 6'd19) || (ui_x == 7'd26 && ui_y >= 6'd19)) intro_rgb = 12'h0F5;
+            if ((ui_x == 7'd29 || ui_x == 7'd33)) intro_rgb = 12'h0F5;
+            if ((ui_x - 7'd29) == (ui_y - 6'd15) && (ui_x >= 7'd29 && ui_x <= 7'd33)) intro_rgb = 12'h0F5;
+            if ((ui_y == 6'd15 || ui_y == 6'd19) && (ui_x >= 7'd36 && ui_x <= 7'd40)) intro_rgb = 12'h0F5;
+            if (ui_x == 7'd36 || ui_x == 7'd40) intro_rgb = 12'h0F5;
+            if (ui_x == 7'd43) intro_rgb = 12'h0F5;
+            if ((ui_x + ui_y == 62 || ui_y - ui_x == -24) && (ui_x >= 7'd44 && ui_x <= 7'd47)) intro_rgb = 12'h0F5;
+            if ((ui_y == 6'd15 || ui_y == 6'd19 || ui_y == 6'd23) && (ui_x >= 7'd50 && ui_x <= 7'd54)) intro_rgb = 12'h0F5;
+            if (ui_x == 7'd50) intro_rgb = 12'h0F5;
+        end
+
+        if (ui_x >= 7'd24 && ui_x <= 7'd54 && ui_y >= 6'd35 && ui_y <= 6'd45) begin
+            if (ui_x == 7'd24 || ui_x == 7'd54 || ui_y == 6'd35 || ui_y == 6'd45)
+                intro_rgb = btn_txt_col;
+            else
+                intro_rgb = blink_on ? 12'h093 : 12'h041;
+
+            if (ui_y >= 6'd38 && ui_y <= 6'd42) begin
+                if ((ui_y == 6'd38 || ui_y == 6'd40 || ui_y == 6'd42) && (ui_x >= 7'd28 && ui_x <= 7'd30)) intro_rgb = btn_txt_col;
+                if ((ui_x == 7'd28 && ui_y == 6'd39) || (ui_x == 7'd30 && ui_y == 6'd41)) intro_rgb = btn_txt_col;
+                if (ui_y == 6'd38 && (ui_x >= 7'd33 && ui_x <= 7'd35)) intro_rgb = btn_txt_col;
+                if (ui_x == 7'd34) intro_rgb = btn_txt_col;
+                if ((ui_y == 6'd38 || ui_y == 6'd40) && (ui_x >= 7'd38 && ui_x <= 7'd40)) intro_rgb = btn_txt_col;
+                if (ui_x == 7'd38 || ui_x == 7'd40) intro_rgb = btn_txt_col;
+                if (ui_x == 7'd43) intro_rgb = btn_txt_col;
+                if ((ui_y == 6'd38 || ui_y == 6'd40) && (ui_x >= 7'd43 && ui_x <= 7'd45)) intro_rgb = btn_txt_col;
+                if (ui_x == 7'd45 && (ui_y == 6'd39 || ui_y >= 6'd41)) intro_rgb = btn_txt_col;
+                if (ui_y == 6'd38 && (ui_x >= 7'd48 && ui_x <= 7'd50)) intro_rgb = btn_txt_col;
+                if (ui_x == 7'd49) intro_rgb = btn_txt_col;
+            end
+        end
+    end
+
+    always @(*) begin
+        if (hpos < 10'd10 || hpos >= 10'd630 || vpos < 10'd10 || vpos >= 10'd470) begin
+            game_rgb = 12'h00F;
         end else begin
             case (square_state)
-                2'b00: begin
-                    VGA_R = 4'b0000; VGA_G = 4'b0000; VGA_B = 4'b0000;
-                end
-                2'b01: begin
-                    VGA_R = 4'b0000; VGA_G = 4'b1111; VGA_B = 4'b0000;
-                end
-                2'b10: begin
-                    VGA_R = 4'b1111; VGA_G = 4'b1111; VGA_B = 4'b0000;
-                end
-                default: begin
-                    VGA_R = 4'b0000; VGA_G = 4'b0000; VGA_B = 4'b0000;
-                end
+                2'b00:   game_rgb = 12'h000;
+                2'b01:   game_rgb = 12'h0F0;
+                2'b10:   game_rgb = 12'hF00;
+                2'b11:   game_rgb = 12'h808;
+                default: game_rgb = 12'h000;
             endcase
         end
     end
+
+    always @(*) begin
+        gameover_rgb = ((ui_x[0] ^ ui_y[0]) == 1'b1) ? 12'h300 : 12'h100;
+
+        if ((ui_x >= 7'd1 && ui_x <= 7'd78) && (ui_y >= 6'd1 && ui_y <= 6'd58)) begin
+            if (ui_x == 7'd1 || ui_x == 7'd78 || ui_y == 6'd1 || ui_y == 6'd58)
+                gameover_rgb = 12'hFA0;
+        end
+        if ((ui_x >= 7'd3 && ui_x <= 7'd76) && (ui_y >= 6'd3 && ui_y <= 6'd56)) begin
+            if (ui_x == 7'd3 || ui_x == 7'd76 || ui_y == 6'd3 || ui_y == 6'd56)
+                gameover_rgb = 12'h830;
+        end
+
+        if (ui_x >= 7'd22 && ui_x <= 7'd57 && ui_y >= 6'd9 && ui_y <= 6'd30) begin
+            if (ui_x == 7'd22 || ui_x == 7'd57 || ui_y == 6'd9 || ui_y == 6'd30)
+                gameover_rgb = 12'hF50;
+            else
+                gameover_rgb = 12'h000;
+        end
+
+        if (ui_y >= 6'd12 && ui_y <= 6'd18) begin
+            if ((ui_y == 6'd12 || ui_y == 6'd18) && (ui_x >= 7'd29 && ui_x <= 7'd32)) gameover_rgb = 12'hF22;
+            if (ui_x == 7'd29) gameover_rgb = 12'hF22;
+            if (ui_x == 7'd32 && ui_y >= 6'd15) gameover_rgb = 12'hF22;
+            if (ui_y == 6'd15 && (ui_x == 7'd31 || ui_x == 7'd32)) gameover_rgb = 12'hF22;
+            if ((ui_y == 6'd12 || ui_y == 6'd15) && (ui_x >= 7'd35 && ui_x <= 7'd38)) gameover_rgb = 12'hF22;
+            if (ui_x == 7'd35 || ui_x == 7'd38) gameover_rgb = 12'hF22;
+            if (ui_x == 7'd41 || ui_x == 7'd45) gameover_rgb = 12'hF22;
+            if ((ui_x == 7'd42 || ui_x == 7'd44) && ui_y == 6'd13) gameover_rgb = 12'hF22;
+            if (ui_x == 7'd43 && ui_y == 6'd14) gameover_rgb = 12'hF22;
+            if ((ui_y == 6'd12 || ui_y == 6'd15 || ui_y == 6'd18) && (ui_x >= 7'd47 && ui_x <= 7'd50)) gameover_rgb = 12'hF22;
+            if (ui_x == 7'd47) gameover_rgb = 12'hF22;
+        end
+
+        if (ui_y >= 6'd21 && ui_y <= 6'd27) begin
+            if ((ui_y == 6'd21 || ui_y == 6'd27) && (ui_x >= 7'd29 && ui_x <= 7'd32)) gameover_rgb = 12'hFA0;
+            if (ui_x == 7'd29 || ui_x == 7'd32) gameover_rgb = 12'hFA0;
+            if ((ui_x == 7'd35 || ui_x == 7'd39) && ui_y <= 6'd25) gameover_rgb = 12'hFA0;
+            if ((ui_x == 7'd36 || ui_x == 7'd38) && ui_y == 6'd26) gameover_rgb = 12'hFA0;
+            if (ui_x == 7'd37 && ui_y == 6'd27) gameover_rgb = 12'hFA0;
+            if ((ui_y == 6'd21 || ui_y == 6'd24 || ui_y == 6'd27) && (ui_x >= 7'd41 && ui_x <= 7'd44)) gameover_rgb = 12'hFA0;
+            if (ui_x == 7'd41) gameover_rgb = 12'hFA0;
+            if (ui_x == 7'd47) gameover_rgb = 12'hFA0;
+            if ((ui_y == 6'd21 || ui_y == 6'd24) && (ui_x >= 7'd47 && ui_x <= 7'd50)) gameover_rgb = 12'hFA0;
+            if (ui_x == 7'd50 && (ui_y == 6'd22 || ui_y == 6'd23 || ui_y >= 6'd25)) gameover_rgb = 12'hFA0;
+        end
+
+        if (ui_x >= 7'd24 && ui_x <= 7'd54 && ui_y >= 6'd36 && ui_y <= 6'd46) begin
+            if (ui_x == 7'd24 || ui_x == 7'd54 || ui_y == 6'd36 || ui_y == 6'd46)
+                gameover_rgb = btn_txt_col;
+            else
+                gameover_rgb = blink_on ? 12'hC50 : 12'h510;
+
+            if (ui_y >= 6'd39 && ui_y <= 6'd43) begin
+                if (ui_x == 7'd28) gameover_rgb = btn_txt_col;
+                if ((ui_y == 6'd39 || ui_y == 6'd41) && (ui_x >= 7'd28 && ui_x <= 7'd30)) gameover_rgb = btn_txt_col;
+                if (ui_x == 7'd30 && (ui_y == 6'd40 || ui_y >= 6'd42)) gameover_rgb = btn_txt_col;
+                if ((ui_y == 6'd39 || ui_y == 6'd41 || ui_y == 6'd43) && (ui_x >= 7'd33 && ui_x <= 7'd35)) gameover_rgb = btn_txt_col;
+                if (ui_x == 7'd33) gameover_rgb = btn_txt_col;
+                if (ui_y == 6'd39 && (ui_x >= 7'd38 && ui_x <= 7'd40)) gameover_rgb = btn_txt_col;
+                if (ui_x == 7'd39) gameover_rgb = btn_txt_col;
+                if (ui_x == 7'd43) gameover_rgb = btn_txt_col;
+                if ((ui_y == 6'd39 || ui_y == 6'd41) && (ui_x >= 7'd43 && ui_x <= 7'd45)) gameover_rgb = btn_txt_col;
+                if (ui_x == 7'd45 && (ui_y == 6'd40 || ui_y >= 6'd42)) gameover_rgb = btn_txt_col;
+                if ((ui_x == 7'd48 || ui_x == 7'd50) && ui_y <= 6'd40) gameover_rgb = btn_txt_col;
+                if (ui_x == 7'd49 && ui_y >= 6'd41) gameover_rgb = btn_txt_col;
+            end
+        end
+    end
+
+    reg [11:0] selected_rgb;
+
+    always @(*) begin
+        case (global_game_state)
+            2'b00:   selected_rgb = intro_rgb;
+            2'b01:   selected_rgb = game_rgb;
+            2'b10:   selected_rgb = gameover_rgb;
+            default: selected_rgb = 12'h000;
+        endcase
+    end
+
+    always @(posedge clk_25mhz) begin
+        if (video_on) begin
+            {VGA_R, VGA_G, VGA_B} <= selected_rgb;
+        end else begin
+            {VGA_R, VGA_G, VGA_B} <= 12'h000;
+        end
+    end
+
 endmodule
 
 module snake_logic_fsm (
-    input wire clk_100mhz,
-    input wire rst_n,
-    input wire btn_up,
-    input wire btn_down,
-    input wire btn_left,
-    input wire btn_right,
-    output reg we,
-    output reg [8:0] fsm_addr,
-    output reg [1:0] fsm_data_in
+    input  wire       clk_100mhz,
+    input  wire       rst_n,
+    input  wire       btn_up, btn_down, btn_left, btn_right,
+    input  wire       btn_start, 
+    output reg        we,
+    output reg  [8:0] fsm_addr,
+    output reg  [1:0] fsm_data_in,
+    input  wire [1:0] fsm_data_out,
+    output reg  [1:0] global_state
 );
 
-    reg [24:0] tick_counter = 0;
-    wire game_tick = (tick_counter == 25'd25_000_000); 
-
-    always @(posedge clk_100mhz) begin
-        if (!rst_n) tick_counter <= 0;
-        else if (game_tick) tick_counter <= 0;
-        else tick_counter <= tick_counter + 1;
-    end
-
-    reg [4:0] head_x; 
-    reg [3:0] head_y;
-    reg [1:0] direction, next_direction;
-    
-    localparam DIR_UP = 2'b00, DIR_DOWN = 2'b01, DIR_LEFT = 2'b10, DIR_RIGHT = 2'b11;
-
-    always @(posedge clk_100mhz) begin
-        if (!rst_n) next_direction <= DIR_RIGHT;
-        else begin
-            if (btn_up)    next_direction <= DIR_UP;
-            if (btn_down)  next_direction <= DIR_DOWN;
-            if (btn_left)  next_direction <= DIR_LEFT;
-            if (btn_right) next_direction <= DIR_RIGHT;
+    reg [4:0] btn_sync_0, btn_sync_1;
+    always @(posedge clk_100mhz or negedge rst_n) begin
+        if (!rst_n) begin
+            btn_sync_0 <= 5'b0;
+            btn_sync_1 <= 5'b0;
+        end else begin
+            btn_sync_0 <= {btn_start, btn_up, btn_down, btn_left, btn_right};
+            btn_sync_1 <= btn_sync_0;
         end
     end
-       
-    localparam INIT = 0, WAIT_TICK = 1, ERASE_OLD = 2, UPDATE_POS = 3, DRAW_NEW = 4, GAME_OVER = 5;
-    reg [2:0] state = INIT;
+
+    wire s_start = btn_sync_1[4];
+    wire s_up    = btn_sync_1[3];
+    wire s_down  = btn_sync_1[2];
+    wire s_left  = btn_sync_1[1];
+    wire s_right = btn_sync_1[0];
+
+    reg [19:0] debounce_cnt = 0;
+    reg btn_start_clean = 0;
+    reg btn_start_prev  = 0;
 
     always @(posedge clk_100mhz or negedge rst_n) begin
         if (!rst_n) begin
-            state <= INIT;
-            we <= 1'b0;
+            debounce_cnt <= 0;
+            btn_start_clean <= 0;
+            btn_start_prev <= 0;
         end else begin
+            if (s_start != btn_start_clean) begin
+                debounce_cnt <= debounce_cnt + 1;
+                if (debounce_cnt == 20'd1_000_000) begin
+                    btn_start_clean <= s_start;
+                    debounce_cnt <= 0;
+                end
+            end else begin
+                debounce_cnt <= 0;
+            end
+            btn_start_prev <= btn_start_clean;
+        end
+    end
+    wire start_pressed = (btn_start_clean && !btn_start_prev);
+
+    reg [24:0] tick_counter = 0;
+    wire game_tick = (tick_counter == 25'd15_000_000); 
+    always @(posedge clk_100mhz or negedge rst_n) begin
+        if (!rst_n || game_tick) tick_counter <= 0;
+        else tick_counter <= tick_counter + 1;
+    end
+
+    reg [9:0] lfsr = 10'b1010110011; 
+    always @(posedge clk_100mhz or negedge rst_n) begin
+        if (!rst_n) lfsr <= 10'b1010110011;
+        else lfsr <= {lfsr[8:0], lfsr[9] ^ lfsr[6]};
+    end
+
+    wire [4:0] rand_x = lfsr[4:0];
+    wire [3:0] rand_y = lfsr[8:5];
+    wire [4:0] safe_x = (rand_x > 5'd19) ? (rand_x - 5'd12) : rand_x;
+    wire [3:0] safe_y = (rand_y > 4'd14) ? (rand_y - 4'd2)  : rand_y;
+
+    localparam DIR_UP = 2'b00, DIR_DOWN = 2'b01, DIR_LEFT = 2'b10, DIR_RIGHT = 2'b11;
+    reg [1:0] dir, next_dir;
+    reg dir_changed_in_tick;
+    
+    always @(posedge clk_100mhz or negedge rst_n) begin
+        if (!rst_n) begin
+            next_dir <= DIR_RIGHT;
+            dir_changed_in_tick <= 0;
+        end else if (global_state != 2'b01) begin
+            next_dir <= DIR_RIGHT;
+            dir_changed_in_tick <= 0;
+        end else if (game_tick) begin
+            dir_changed_in_tick <= 0;
+        end else if (!dir_changed_in_tick) begin
+            if (s_up && dir != DIR_DOWN && dir != DIR_UP) begin
+                next_dir <= DIR_UP;
+                dir_changed_in_tick <= 1;
+            end else if (s_down && dir != DIR_UP && dir != DIR_DOWN) begin
+                next_dir <= DIR_DOWN;
+                dir_changed_in_tick <= 1;
+            end else if (s_left && dir != DIR_RIGHT && dir != DIR_LEFT) begin
+                next_dir <= DIR_LEFT;
+                dir_changed_in_tick <= 1;
+            end else if (s_right && dir != DIR_LEFT && dir != DIR_RIGHT) begin
+                next_dir <= DIR_RIGHT;
+                dir_changed_in_tick <= 1;
+            end
+        end
+    end
+
+    reg [8:0] snake_body [0:511]; 
+    reg [8:0] head_ptr; 
+    reg [8:0] tail_ptr; 
+
+    localparam S_MENU               = 4'd0,
+               S_CLEAR_RAM          = 4'd1,
+               S_INIT               = 4'd2,
+               S_REQ_FOOD           = 4'd3,
+               S_CHECK_FOOD         = 4'd4,
+               S_REQ_POISON         = 4'd5,
+               S_CHECK_POISON       = 4'd6,
+               S_WAIT_TICK          = 4'd7,
+               S_CALC_NEXT          = 4'd8,
+               S_WAIT_READ          = 4'd9,
+               S_EVALUATE_COLLISION = 4'd10,
+               S_ERASE_TAIL         = 4'd11,
+               S_DRAW_HEAD          = 4'd12,
+               S_GAME_OVER          = 4'd13;
+    
+    reg [3:0] state = S_MENU;
+    
+    reg signed [5:0] next_x, head_x; 
+    reg signed [5:0] next_y, head_y;
+    reg just_ate;
+    reg initial_spawn;
+    reg [8:0] clear_ptr;
+    reg [8:0] candidate_addr;
+
+    wire signed [5:0] calc_next_x = (dir == DIR_LEFT) ? (head_x - 1) : ((dir == DIR_RIGHT) ? (head_x + 1) : head_x);
+    wire signed [5:0] calc_next_y = (dir == DIR_UP)   ? (head_y - 1) : ((dir == DIR_DOWN)  ? (head_y + 1) : head_y);
+
+    always @(posedge clk_100mhz or negedge rst_n) begin
+        if (!rst_n) begin
+            state <= S_MENU;
+            global_state <= 2'b00;
+            we <= 0;
+            just_ate <= 0;
+            initial_spawn <= 0;
+            clear_ptr <= 9'd0;
+        end else begin
+            we <= 0;
+
             case (state)
-                INIT: begin
-                    head_x <= 5'd10; 
-                    head_y <= 4'd7;
-                    direction <= DIR_RIGHT;
-                    state <= DRAW_NEW;
+                S_MENU: begin
+                    global_state <= 2'b00;
+                    if (start_pressed) begin
+                        clear_ptr <= 9'd0;
+                        state <= S_CLEAR_RAM;
+                    end
+                end
+
+                S_CLEAR_RAM: begin
+                    global_state <= 2'b01;
+                    fsm_addr <= clear_ptr;
+                    fsm_data_in <= 2'b00;
+                    we <= 1;
+                    if (clear_ptr == 9'd511) state <= S_INIT; 
+                    else clear_ptr <= clear_ptr + 1;
+                end
+
+                S_INIT: begin
+                    head_x <= 6'd5; 
+                    head_y <= 6'd7;
+                    head_ptr <= 9'd0;   
+                    tail_ptr <= 9'd0;
+                    dir <= DIR_RIGHT;
+                    just_ate <= 0;
+                    initial_spawn <= 1;
+                    
+                    snake_body[0] <= {4'd7, 5'd5}; 
+                    fsm_addr <= {4'd7, 5'd5};
+                    fsm_data_in <= 2'b01; 
+                    we <= 1;
+                    state <= S_REQ_FOOD;
                 end
                 
-                WAIT_TICK: begin
-                    we <= 1'b0; 
-                    if (game_tick) begin
-                        if (direction[1] == next_direction[1] && direction != next_direction) begin
-                            state <= GAME_OVER;
+                S_REQ_FOOD: begin
+                    candidate_addr <= {safe_y, safe_x};
+                    fsm_addr <= {safe_y, safe_x};
+                    state <= S_CHECK_FOOD;
+                end
+
+                S_CHECK_FOOD: begin
+                    if (fsm_data_out == 2'b00) begin
+                        fsm_addr <= candidate_addr;
+                        fsm_data_in <= 2'b10;
+                        we <= 1;
+                        if (initial_spawn) begin
+                            initial_spawn <= 0;
+                            state <= S_REQ_POISON;
                         end else begin
-                            direction <= next_direction;
-                            state <= ERASE_OLD;
+                            state <= S_WAIT_TICK;
+                        end
+                    end else begin
+                        state <= S_REQ_FOOD;
+                    end
+                end
+
+                S_REQ_POISON: begin
+                    candidate_addr <= {safe_y, safe_x};
+                    fsm_addr <= {safe_y, safe_x};
+                    state <= S_CHECK_POISON;
+                end
+
+                S_CHECK_POISON: begin
+                    if (fsm_data_out == 2'b00) begin
+                        fsm_addr <= candidate_addr;
+                        fsm_data_in <= 2'b11;
+                        we <= 1;
+                        state <= S_WAIT_TICK;
+                    end else begin
+                        state <= S_REQ_POISON;
+                    end
+                end
+
+                S_WAIT_TICK: begin
+                    just_ate <= 0; 
+                    if (game_tick) begin
+                        dir <= next_dir;
+                        state <= S_CALC_NEXT;
+                    end
+                end
+
+                S_CALC_NEXT: begin 
+                    next_x <= calc_next_x;
+                    next_y <= calc_next_y;
+
+                    if (calc_next_x > 19 || calc_next_x < 0 || calc_next_y > 14 || calc_next_y < 0) begin
+                        state <= S_GAME_OVER;
+                    end else begin
+                        fsm_addr <= {calc_next_y[3:0], calc_next_x[4:0]}; 
+                        state <= S_WAIT_READ;
+                    end
+                end
+
+                S_WAIT_READ: begin
+                    state <= S_EVALUATE_COLLISION;
+                end
+
+                S_EVALUATE_COLLISION: begin
+                    if (fsm_data_out == 2'b11) begin
+                        state <= S_GAME_OVER;
+                    end else if (fsm_data_out == 2'b01 && ({next_y[3:0], next_x[4:0]} != snake_body[tail_ptr])) begin
+                        state <= S_GAME_OVER;
+                    end else begin
+                        head_x <= next_x; 
+                        head_y <= next_y;
+                        head_ptr <= head_ptr + 1;
+                        snake_body[head_ptr + 1] <= {next_y[3:0], next_x[4:0]};
+                        
+                        if (fsm_data_out == 2'b10) begin
+                            just_ate <= 1;
+                            state <= S_DRAW_HEAD;
+                        end else begin
+                            state <= S_ERASE_TAIL;
                         end
                     end
                 end
-                
-                ERASE_OLD: begin
-                    fsm_addr <= {head_y, head_x};
+
+                S_ERASE_TAIL: begin 
+                    fsm_addr <= snake_body[tail_ptr];
                     fsm_data_in <= 2'b00;
-                    we <= 1'b1;
-                    state <= UPDATE_POS;
+                    we <= 1;
+                    tail_ptr <= tail_ptr + 1; 
+                    state <= S_DRAW_HEAD;
                 end
-                
-                UPDATE_POS: begin
-                    we <= 1'b0;
-                    case (direction)
-                        DIR_UP: begin
-                            if (head_y > 0) begin
-                                head_y <= head_y - 1;
-                                state <= DRAW_NEW;
-                            end else state <= GAME_OVER;
-                        end
-                        DIR_DOWN: begin
-                            if (head_y < 14) begin
-                                head_y <= head_y + 1;
-                                state <= DRAW_NEW;
-                            end else state <= GAME_OVER;
-                        end
-                        DIR_LEFT: begin
-                            if (head_x > 0) begin
-                                head_x <= head_x - 1;
-                                state <= DRAW_NEW;
-                            end else state <= GAME_OVER;
-                        end
-                        DIR_RIGHT: begin
-                            if (head_x < 19) begin
-                                head_x <= head_x + 1;
-                                state <= DRAW_NEW;
-                            end else state <= GAME_OVER;
-                        end
-                    endcase
-                end
-                
-                DRAW_NEW: begin
-                    fsm_addr <= {head_y, head_x}; 
+
+                S_DRAW_HEAD: begin 
+                    fsm_addr <= {head_y[3:0], head_x[4:0]};
                     fsm_data_in <= 2'b01;
-                    we <= 1'b1;
-                    state <= WAIT_TICK;
+                    we <= 1;
+                    
+                    if (just_ate) state <= S_REQ_FOOD;
+                    else state <= S_WAIT_TICK;
                 end
-                
-                GAME_OVER: begin
-                    we <= 1'b0;
-                    state <= GAME_OVER;
+
+                S_GAME_OVER: begin
+                    global_state <= 2'b10;
+                    if (start_pressed) begin
+                        clear_ptr <= 9'd0;
+                        state <= S_CLEAR_RAM;
+                    end
                 end
-                
-                default: state <= INIT;
+
+                default: state <= S_MENU;
             endcase
         end
     end
 endmodule
 
 module tile_map_memory (
-    input wire clk,
-    input wire we,
-    input wire [8:0] fsm_addr,
-    input wire [1:0] fsm_data_in,
-    input wire [8:0] vga_addr,
+    input  wire       clk,
+    input  wire       we,
+    input  wire [8:0] fsm_addr,
+    input  wire [1:0] fsm_data_in,
+    output wire [1:0] fsm_data_out,
+    input  wire [8:0] vga_addr,
     output wire [1:0] vga_data_out
 );
-
     reg [1:0] memory_array [511:0];
 
     always @(posedge clk) begin
@@ -239,6 +563,6 @@ module tile_map_memory (
         end
     end
 
+    assign fsm_data_out = memory_array[fsm_addr];
     assign vga_data_out = memory_array[vga_addr];
-
 endmodule
