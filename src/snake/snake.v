@@ -466,13 +466,14 @@ module snake_logic_fsm (
     localparam DIR_UP = 2'b00, DIR_DOWN = 2'b01, DIR_LEFT = 2'b10, DIR_RIGHT = 2'b11;
     reg [1:0] dir, next_dir;
     reg dir_changed_in_tick;
-
+    // Force Distributed RAM (LUTRAM) instead of 4,608 FFs or BRAM
     (* ram_style = "distributed" *) reg [8:0] snake_body [0:511];
     reg        body_we;
     reg  [8:0] body_waddr;
     reg  [8:0] body_wdata;
     wire [8:0] tail_coords = snake_body[tail_ptr];
 
+    // Separate synchronous write block (NO async reset!)
     always @(posedge clk_100mhz) begin
         if (body_we) begin
             snake_body[body_waddr] <= body_wdata;
@@ -544,7 +545,18 @@ module snake_logic_fsm (
     reg initial_spawn;
     reg [8:0] clear_ptr;
     reg [8:0] candidate_addr;
-
+    reg [4:0] food_x; 
+    reg [3:0] food_y;
+    
+    wire [4:0] cand_x = candidate_addr[4:0];
+    wire [3:0] cand_y = candidate_addr[8:5];
+    wire [4:0] dist_food_x = (cand_x >= food_x) ? (cand_x - food_x) : (food_x - cand_x);
+    wire [3:0] dist_food_y = (cand_y >= food_y) ? (cand_y - food_y) : (food_y - cand_y);
+    wire far_from_food = (dist_food_x >= 5'd2) || (dist_food_y >= 4'd2);
+    
+    wire [4:0] dist_head_x = (cand_x >= head_x[4:0]) ? (cand_x - head_x[4:0]) : (head_x[4:0] - cand_x);
+    wire [3:0] dist_head_y = (cand_y >= head_y[3:0]) ? (cand_y - head_y[3:0]) : (head_y[3:0] - cand_y);
+    wire far_from_head = (dist_head_x >= 5'd2) || (dist_head_y >= 4'd2);
     wire signed [5:0] calc_next_x = (dir == DIR_LEFT) ? (head_x - 1) : ((dir == DIR_RIGHT) ? (head_x + 1) : head_x);
     wire signed [5:0] calc_next_y = (dir == DIR_UP)   ? (head_y - 1) : ((dir == DIR_DOWN)  ? (head_y + 1) : head_y);
 
@@ -616,6 +628,8 @@ module snake_logic_fsm (
                         fsm_addr <= candidate_addr;
                         fsm_data_in <= 2'b10;
                         state <= S_FOOD_STROBE;
+                        food_x <= candidate_addr[4:0];
+                        food_y <= candidate_addr[8:5];
                     end else begin
                         state <= S_REQ_FOOD;
                     end
@@ -653,7 +667,7 @@ module snake_logic_fsm (
                 end
 
                 S_CHECK_POISON: begin
-                    if (fsm_data_out == 2'b00) begin
+                    if (fsm_data_out == 2'b00 && far_from_food && far_from_head) begin
                         fsm_addr <= candidate_addr;
                         fsm_data_in <= 2'b11;
                         current_poison_addr <= candidate_addr;
