@@ -466,14 +466,13 @@ module snake_logic_fsm (
     localparam DIR_UP = 2'b00, DIR_DOWN = 2'b01, DIR_LEFT = 2'b10, DIR_RIGHT = 2'b11;
     reg [1:0] dir, next_dir;
     reg dir_changed_in_tick;
-    // Force Distributed RAM (LUTRAM) instead of 4,608 FFs or BRAM
+
     (* ram_style = "distributed" *) reg [8:0] snake_body [0:511];
     reg        body_we;
     reg  [8:0] body_waddr;
     reg  [8:0] body_wdata;
     wire [8:0] tail_coords = snake_body[tail_ptr];
 
-    // Separate synchronous write block (NO async reset!)
     always @(posedge clk_100mhz) begin
         if (body_we) begin
             snake_body[body_waddr] <= body_wdata;
