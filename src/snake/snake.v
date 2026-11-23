@@ -466,7 +466,19 @@ module snake_logic_fsm (
     localparam DIR_UP = 2'b00, DIR_DOWN = 2'b01, DIR_LEFT = 2'b10, DIR_RIGHT = 2'b11;
     reg [1:0] dir, next_dir;
     reg dir_changed_in_tick;
-    
+    // Force Distributed RAM (LUTRAM) instead of 4,608 FFs or BRAM
+    (* ram_style = "distributed" *) reg [8:0] snake_body [0:511];
+    reg        body_we;
+    reg  [8:0] body_waddr;
+    reg  [8:0] body_wdata;
+    wire [8:0] tail_coords = snake_body[tail_ptr];
+
+    // Separate synchronous write block (NO async reset!)
+    always @(posedge clk_100mhz) begin
+        if (body_we) begin
+            snake_body[body_waddr] <= body_wdata;
+        end
+    end
     always @(posedge clk_100mhz or negedge rst_n) begin
         if (!rst_n) begin
             next_dir <= DIR_RIGHT;
@@ -495,8 +507,7 @@ module snake_logic_fsm (
 
     reg [3:0] sc_d4, sc_d3, sc_d2, sc_d1, sc_d0;
     assign score_bcd = {sc_d4, sc_d3, sc_d2, sc_d1, sc_d0};
-
-    reg [8:0] snake_body [0:511]; 
+    
     reg [8:0] head_ptr; 
     reg [8:0] tail_ptr; 
     reg [8:0] current_poison_addr;
@@ -543,6 +554,7 @@ module snake_logic_fsm (
             state <= S_MENU;
             global_state <= 2'b00;
             we <= 0;
+            body_we <= 1'b0;
             just_ate <= 0;
             initial_spawn <= 0;
             clear_ptr <= 9'd0;
@@ -577,7 +589,9 @@ module snake_logic_fsm (
                     dir <= DIR_RIGHT;
                     just_ate <= 0;
                     initial_spawn <= 1;
-                    snake_body[0] <= {4'd7, 5'd5}; 
+                    body_we    <= 1'b1;
+                    body_waddr <= 9'd0;
+                    body_wdata <= {4'd7, 5'd5};
                     fsm_addr <= {4'd7, 5'd5};
                     fsm_data_in <= 2'b01; 
                     state <= S_INIT_STROBE;
@@ -682,13 +696,15 @@ module snake_logic_fsm (
                 S_EVALUATE_COLLISION: begin
                     if (fsm_data_out == 2'b11) begin
                         state <= S_GAME_OVER;
-                    end else if (fsm_data_out == 2'b01 && ({next_y[3:0], next_x[4:0]} != snake_body[tail_ptr])) begin
+                    end else if (fsm_data_out == 2'b01 && ({next_y[3:0], next_x[4:0]} != tail_coords)) begin
                         state <= S_GAME_OVER;
                     end else begin
                         head_x <= next_x; 
                         head_y <= next_y;
                         head_ptr <= head_ptr + 1;
-                        snake_body[head_ptr + 1] <= {next_y[3:0], next_x[4:0]};
+                        body_we    <= 1'b1;
+                        body_waddr <= head_ptr + 9'd1;
+                        body_wdata <= {next_y[3:0], next_x[4:0]};
                         
                         if (fsm_data_out == 2'b10) begin
                             just_ate <= 1;
@@ -711,7 +727,7 @@ module snake_logic_fsm (
                 end
 
                 S_ERASE_TAIL: begin 
-                    fsm_addr <= snake_body[tail_ptr];
+                    fsm_addr <= tail_coords;
                     fsm_data_in <= 2'b00;
                     tail_ptr <= tail_ptr + 1; 
                     state <= S_ERASE_TAIL_STB;
