@@ -1,8 +1,10 @@
 # Proyecto-Final-ELDI-2026-2
-Instrucciones para ejecutar el código y probar el proyecto.
-1) Inicialmente se copiaran los codigos que se encuentran en este repositorio y se copiaran en un archivo nuevo de Vivado, donde se generara y se correra la implementacion asegurandose de que el codigo no presente fallas de sintaxis o se haya escogido el modelo de FPGA incorrecto. El proyecto se trabajo en una Nexys A7, por lo que es importante que se utilice esta misma o modificar el archivo de constraints en caso de ser necesario.
-2) Se utilizara el puerto VGA que tiene la FPGA para poder visualizar el juego. Si no se tiene un display VGA a la mano, se puede utilizar un conversor de VGA a HDMI para poder visualizarlo en un monitor sin necesidad del display VGA. Realizar la conexion entre la FPGA y el monitor.
-3) Correr la implementación ya copiada en Vivado y programar la FPGA. Conectar el Teclado PS2.
-4) Al momento de que se cargue el código, en la pantalla que se este utilizando se empezara a mover la serpiente. Con el teclado se empezara a direccionar a la serpiente con el objetivo de que llegue a la comida (Bloques verdes), y evitando asimismo los bloques amarillos (Veneno). Es importante recalcar que a medida que la serpiente se alimente con mas bloques se moverá mas rápido, y si llega a chocar con un borde o a moverse en una dirección no permitida el juego se acabara y quedara en la pantalla de Game Over. Para volver a jugar se debe darle al botón de RESET, con el cual se volverá a jugar desde una nueva partida.
+Instrucciones para ejecutar el código y utilizar el proyecto.
+1) Instalar Vivado 2026.1 y Arduino IDE, esto con el objetivo de importar los archivos a la placa Nexys correspondiente, y al microcontrolador ESP32 (para procesar las entradas del control)
+2) Una vez hecho esto, se crea un proyecto en cada entorno de desarrollo, importando los archivos src/snake.v y src/constraints.xdc en Vivado, y el archivo src/DualShock_4/DualShock4.ino a la ESP32.
+   Tanto la placa Nexys como la ESP32 deben permanecer conectadas a una computadora con puertos USB activos, puesto que ambas se energizan mediante cables micro-USB y USB-C, respectivamente.
+4) Se inicia el proceso de síntesis e implementación en Vivado (synthesis -> implementation -> Bitstream -> Programación de la placa), se conectan los 7 puertos GPIO correspondientes de la ESP32 (indicados en la       carpeta src/Dualshock_4) a las entradas PMOD JA de la placa Nexys, utilizando JA1, JA2, JA3, JA4, JA7, JA8, y JA6, este último como un GND común entre ambos dispositivos.
+5) Se presiona el botón "EN" en la ESP32, tras lo cual se verifica su funcionamiento en Arduino IDE, mediante Tools -> Serial Monitor -> 115200
+6) Se enciende y enlaza el control DualShock 4 presionando los botones "Share" y "PS" al mismo tiempo durante unos segundos, hasta que este muestre un color y comience a intercalarlo rápidamente. Una vez enlazado, la ESP32 mostrará un mensaje indicando esto. Cada entrada que reciba el control se verá en Serial Monitor de Arduino IDE.
 
-NOTA IMPORTANTE: Las direcciones no permitidas son aquellas que involucran un movimiento que la serpiente no puede efectuar, es decir, no podrá moverse de izquierda estando hacia la derecha, y pasa el mismo caso si es de forma vertical. Si llega a ocurrir esto, se dará el juego por terminado.
+
