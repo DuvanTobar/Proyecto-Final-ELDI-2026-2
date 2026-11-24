@@ -8,3 +8,4 @@ Instrucciones para ejecutar el código y utilizar el proyecto.
 6) Se enciende y enlaza el control DualShock 4 presionando los botones "Share" y "PS" al mismo tiempo durante unos segundos, hasta que este muestre un color y comience a intercalarlo rápidamente. Una vez enlazado, la ESP32 mostrará un mensaje indicando esto. Cada entrada que reciba el control se verá en Serial Monitor de Arduino IDE.
 
 
+# Declaración de Uso de Inteligencia Artificial
